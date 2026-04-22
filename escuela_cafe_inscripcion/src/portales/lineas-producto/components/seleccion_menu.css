@@ -1,0 +1,346 @@
+.seleccion-menu-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #3d2817 0%, #5c4033 50%, #3d2817 100%);
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.seleccion-menu-header {
+  text-align: center;
+  margin-bottom: 60px;
+  width: 100%;
+  max-width: 1200px;
+  position: relative;
+}
+
+.header-actions-sm {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 100;
+}
+
+.back-button-sm {
+  background: transparent;
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  letter-spacing: 1px;
+}
+
+.panel-button-sm {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  padding: 12px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  letter-spacing: 1px;
+}
+
+.back-button-sm:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateX(5px);
+}
+
+.panel-button-sm:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-2px);
+}
+
+.welcome-text {
+  color: #d4a574;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 2px;
+  margin: 0 0 15px 0;
+  text-transform: uppercase;
+}
+
+.user-name {
+  color: white;
+  font-size: 3.5rem;
+  font-weight: 300;
+  margin: 10px 0 20px 0;
+  letter-spacing: 1px;
+}
+
+.subtitle-text {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  font-weight: 400;
+  margin: 0 0 30px 0;
+}
+
+.divider-line {
+  width: 100px;
+  height: 2px;
+  background: #d3ba9f;
+  margin: 0 auto;
+  border-radius: 2px;
+}
+
+.cards-container-sm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 40px;
+  width: 100%;
+  max-width: 1100px;
+  padding: 0 40px;
+  justify-content: center;
+}
+
+.menu-card-sm {
+  background: white;
+  border-radius: 20px;
+  border-top: 4px solid transparent;
+  padding: 50px 40px;
+  cursor: default;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  min-height: 360px;
+}
+
+.menu-card-sm.escuela-cafe {
+  border-top-color: #B89976;
+}
+
+.menu-card-sm.evaluacion-toderas {
+  border-top-color: #e0a96d;
+}
+
+.card-icon-wrapper {
+  width: 70px;
+  height: 70px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 25px;
+  font-size: 2rem;
+}
+
+.card-icon-wrapper.green-bg {
+  background: rgba(184, 153, 118, 0.15);
+  color: #8B7355;
+}
+
+.card-icon-wrapper.orange-bg {
+  background: rgba(224, 169, 109, 0.15);
+  color: #c08a4e;
+}
+
+.card-title-sm {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #2c2416;
+  margin: 0 0 15px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.card-description-sm {
+  font-size: 1rem;
+  color: #666;
+  margin: 0 0 30px 0;
+  line-height: 1.7;
+  flex-grow: 1;
+}
+
+.btn-ingresar {
+  background: transparent;
+  color: #8B7355;
+  border: none;
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  margin-top: auto;
+}
+
+.menu-card-sm.escuela-cafe .btn-ingresar {
+  color: #8B7355;
+}
+
+.menu-card-sm.evaluacion-toderas .btn-ingresar {
+  color: #c08a4e;
+}
+
+.btn-ingresar:hover {
+  gap: 12px;
+}
+
+.btn-ingresar i {
+  font-size: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.btn-ingresar:hover i {
+  transform: translateX(5px);
+}
+
+
+@media (max-width: 768px) {
+  .user-name {
+    font-size: 2.5rem;
+    margin-top: 50px;
+  }
+
+  .welcome-text {
+    font-size: 0.8rem;
+  }
+
+  .subtitle-text {
+    font-size: 1rem;
+  }
+
+  .cards-container-sm {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding: 0 20px;
+  }
+
+  .menu-card-sm {
+    padding: 40px 30px;
+    min-height: 320px;
+  }
+
+  .back-button-sm {
+    font-size: 12px;
+    padding: 10px 18px;
+  }
+
+  .panel-button-sm {
+    font-size: 12px;
+    padding: 10px 16px;
+  }
+
+  .header-actions-sm {
+    top: 20px;
+    right: 20px;
+    gap: 10px;
+  }
+
+  .card-title-sm {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .seleccion-menu-header {
+    margin-bottom: 30px;
+  }
+
+  .user-name {
+    font-size: 2rem;
+  }
+
+  .card-icon-wrapper {
+    width: 60px;
+    height: 60px;
+    font-size: 1.7rem;
+  }
+
+  .header-actions-sm {
+    left: 20px;
+    right: 20px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .card-title-sm {
+    font-size: 1.4rem;
+  }
+
+  .card-description-sm {
+    font-size: 0.95rem;
+  }
+
+  .btn-ingresar {
+    font-size: 0.9rem;
+  }
+}
+
+/* Estilos de alerta */
+.alerta-evaluacion {
+  background: linear-gradient(135deg, #a84f4f 0%, #ee5a52 100%);
+  color: white;
+  padding: 20px 30px;
+  margin: 0 auto 30px auto;
+  max-width: 800px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.alerta-evaluacion i {
+  font-size: 28px;
+  animation: shake 3s ease-in-out infinite;
+}
+
+.alerta-evaluacion span {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(255, 107, 107, 0.6);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}

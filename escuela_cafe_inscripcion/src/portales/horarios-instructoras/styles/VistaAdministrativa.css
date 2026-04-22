@@ -1,0 +1,203 @@
+.vista-admin-container {
+  min-height: 100vh;
+  background: #fbf9f3;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Optima', sans-serif;
+}
+
+/* Navbar */
+.navbar {
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-content {
+  background: #ffffff;
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.navbar-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navbar-subtitle {
+  font-size: 13px;
+  color: #8B7355;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.navbar-title {
+  font-size: 30px;
+  font-weight: 700;
+  color: #4e3416 !important;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.profile-button-avatar {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.profile-button-avatar:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+.profile-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #C9A984;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.profile-avatar-initials {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #C2956B 0%, #A68A6F 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  border: 3px solid #C9A984;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  letter-spacing: 1px;
+}
+
+/* Main Content */
+.dashboard-main {
+  flex: 1;
+  width: 100%;
+  padding: 0;
+}
+
+/* Welcome Section */
+.welcome-section {
+  background: #f5f5f5;
+  padding: 30px 40px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.welcome-greeting {
+  font-size: 28px;
+  font-weight: 700;
+  color: #4e3416;
+  margin: 0 0 8px 0;
+}
+
+.welcome-description {
+  font-size: 16px;
+  color: #666;
+  margin: 0;
+}
+
+/* Filtros y Contenido */
+.filters-card {
+  margin: 20px 40px !important;
+}
+
+.vista-admin-container .ant-card:not(.filters-card) {
+  margin: 0 40px 20px 40px;
+}
+
+/* Avatar del perfil en modal (más grande) */
+.profile-avatar-modal {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #C2956B 0%, #A0826D 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 40px;
+  margin: 0 auto 20px;
+}
+
+/* Ajustes para Ant Design */
+.filters-card .ant-space-item label {
+  font-weight: 600;
+  color: #6B4E3D;
+}
+
+/* Tabla de Ant Design personalizada */
+.ant-table-wrapper {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.ant-table-thead > tr > th {
+  background: white !important;
+  color: #4e3416 !important;
+  font-weight: 600;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: white !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar-content {
+    padding: 15px 20px;
+  }
+
+  .navbar-title {
+    font-size: 22px;
+  }
+
+  .profile-avatar,
+  .profile-avatar-initials {
+    width: 70px;
+    height: 70px;
+    font-size: 14px;
+  }
+
+  .welcome-section {
+    padding: 20px;
+  }
+
+  .welcome-greeting {
+    font-size: 22px;
+  }
+
+  .welcome-description {
+    font-size: 14px;
+  }
+
+  .filters-card,
+  .vista-admin-container .ant-card:not(.filters-card) {
+    margin: 10px 20px !important;
+  }
+}
+
