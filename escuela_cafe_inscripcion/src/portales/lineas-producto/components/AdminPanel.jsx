@@ -1512,7 +1512,7 @@ const AdminPanel = ({ userData, onLogout }) => {
         <div className="header-left">
           <ProfileCard userData={userData} onLogout={onLogout} />
           <div className="header-titles">
-            <span className="header-logo-text">PANEL DE LÍNEAS Y PRODUCTO C&W</span>
+            <span className="header-logo-text">PANEL  LÍNEAS DE PRODUCTO C&W</span>
             <span className="header-subtitle">Gestión Administrativa</span>
           </div>
         </div>
@@ -1571,7 +1571,7 @@ const AdminPanel = ({ userData, onLogout }) => {
         <div className="admin-content">
 
           <h1 className="admin-title">Hola, {nombreUsuario}</h1>
-          <h2 className="admin-subtitle">Líneas y Producto C&W</h2>
+          <h2 className="admin-subtitle">Líneas de Producto C&W</h2>
 
           {/* Botón de Sección Grande */}
           <div className="main-section-button-container">

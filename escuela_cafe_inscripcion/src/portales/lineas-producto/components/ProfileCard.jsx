@@ -145,13 +145,7 @@ const ProfileCard = ({ userData, onLogout }) => {
               </div>
             </div>
 
-            <div className="profile-info-item-compact">
-              <i className="bi bi-building"></i>
-              <div className="profile-info-content">
-                <span className="profile-info-label">Departamento</span>
-                <span className="profile-info-value">{empleadoInfo.area_nombre || 'N/A'}</span>
-              </div>
-            </div>
+            
           </div>
 
           {onLogout && (

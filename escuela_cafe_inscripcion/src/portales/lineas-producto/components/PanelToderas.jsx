@@ -473,7 +473,7 @@ const PanelToderas = ({ userData, onLogout }) => {
         <div className="header-left">
           <ProfileCard userData={userData} onLogout={onLogout} />
           <div className="header-titles">
-            <span className="header-logo-text">PANEL DE LÍNEAS Y PRODUCTO C&W</span>
+            <span className="header-logo-text">PANEL LÍNEAS DE PRODUCTO C&W</span>
             <span className="header-subtitle">Control de Evaluaciones - Toderas</span>
           </div>
         </div>
@@ -487,7 +487,7 @@ const PanelToderas = ({ userData, onLogout }) => {
       <main className="admin-main">
         <div className="admin-content">
           <h1 className="admin-title">Hola, {nombreUsuario}</h1>
-          <h2 className="admin-subtitle">Panel de Líneas y Producto C&W</h2>
+          <h2 className="admin-subtitle">Panel Líneas de Producto C&W</h2>
           <p className="admin-info" style={{ 
             backgroundColor: '#fff7e6', 
             padding: '12px 20px', 
