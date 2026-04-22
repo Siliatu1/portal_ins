@@ -1341,6 +1341,50 @@
   }
 }
 
+/* Navegación de semanas */
+.btn-semana-nav {
+  padding: 6px 14px;
+  background: white;
+  color: #6B4E3D;
+  border: 2px solid #C9A984;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Optima', sans-serif;
+}
+
+.btn-semana-nav:hover {
+  background: #6B4E3D;
+  color: white;
+  border-color: #6B4E3D;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(107, 78, 61, 0.25);
+}
+
+.btn-semana-reset {
+  background: #f5f0e8;
+  border-color: #AECE82;
+  color: #4e7a28;
+}
+
+.btn-semana-reset:hover {
+  background: #AECE82;
+  border-color: #AECE82;
+  color: white;
+}
+
+.semana-label-nav {
+  font-size: 13px;
+  font-weight: 700;
+  color: #6B4E3D;
+  padding: 4px 10px;
+  background: #fdf6ee;
+  border-radius: 6px;
+  border: 1px solid #e8d8c4;
+}
+
 @media (max-width: 480px) {
   .pdf-preview {
     padding: 24px 16px;

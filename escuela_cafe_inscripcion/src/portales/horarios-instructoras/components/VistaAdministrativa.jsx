@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Table, Tag, Button, Select, Card, Statistic, Row, Col, Modal, Form, Input, TimePicker, Space, Empty } from 'antd';
-import { DownloadOutlined, ClockCircleOutlined, TeamOutlined, FileTextOutlined, EditOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Select, Card, Statistic, Row, Col, Modal, Form, Input, TimePicker, Space, Empty, DatePicker } from 'antd';
+import { DownloadOutlined, ClockCircleOutlined, TeamOutlined, FileTextOutlined, EditOutlined, FileExcelOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import 'antd/dist/reset.css';
@@ -13,13 +13,31 @@ function VistaAdministrativa({ userData, onLogout }) {
   const [user, setUser] = useState(null);
   const [instructoras, setInstructoras] = useState([]);
   const [instructoraSeleccionada, setInstructoraSeleccionada] = useState('todas');
-  const [diaSeleccionado, setDiaSeleccionado] = useState('todos');
   const [lineaSeleccionada, setLineaSeleccionada] = useState('todas');
   const [horariosTodos, setHorariosTodos] = useState([]);
   const [horariosFiltered, setHorariosFiltered] = useState([]);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [puntosVenta, setPuntosVenta] = useState([]);
-  
+
+  const getDefaultLunes = () => {
+    const hoy = new Date();
+    const dow = hoy.getDay();
+    let daysToMonday;
+    if (dow === 0) daysToMonday = 1;
+    else if (dow === 1) daysToMonday = 7;
+    else daysToMonday = 8 - dow;
+    const lunes = new Date(hoy);
+    lunes.setDate(hoy.getDate() + daysToMonday);
+    lunes.setHours(0, 0, 0, 0);
+    return lunes;
+  };
+
+  const [semanaLunes, setSemanaLunes] = useState(getDefaultLunes);
+
+  const irSemanaAnterior = () => setSemanaLunes(prev => { const d = new Date(prev); d.setDate(d.getDate() - 7); return d; });
+  const irSemanaSiguiente = () => setSemanaLunes(prev => { const d = new Date(prev); d.setDate(d.getDate() + 7); return d; });
+  const irProximaSemana = () => setSemanaLunes(getDefaultLunes());
+
   // Estados para modal de edición
   const [modalEditar, setModalEditar] = useState(false);
   const [horarioEditar, setHorarioEditar] = useState(null);
@@ -169,26 +187,10 @@ function VistaAdministrativa({ userData, onLogout }) {
 
     const cargarDatos = async () => {
       try {
-        // Calcular fechas de la próxima semana
-        const hoy = new Date();
-        const diaSemana = hoy.getDay();
-        const proximoLunes = new Date(hoy);
-        
-        let diasHastaProximoLunes;
-        if (diaSemana === 0) {
-          diasHastaProximoLunes = 1;
-        } else if (diaSemana === 1) {
-          diasHastaProximoLunes = 7;
-        } else {
-          diasHastaProximoLunes = 8 - diaSemana;
-        }
-        
-        proximoLunes.setDate(hoy.getDate() + diasHastaProximoLunes);
-        const proximoDomingo = new Date(proximoLunes);
-        proximoDomingo.setDate(proximoLunes.getDate() + 6);
-
-        const fechaInicioStr = `${proximoLunes.getFullYear()}-${String(proximoLunes.getMonth() + 1).padStart(2, '0')}-${String(proximoLunes.getDate()).padStart(2, '0')}`;
-        const fechaFinStr = `${proximoDomingo.getFullYear()}-${String(proximoDomingo.getMonth() + 1).padStart(2, '0')}-${String(proximoDomingo.getDate()).padStart(2, '0')}`;
+        const fechaFin = new Date(semanaLunes);
+        fechaFin.setDate(semanaLunes.getDate() + 6);
+        const fechaInicioStr = `${semanaLunes.getFullYear()}-${String(semanaLunes.getMonth() + 1).padStart(2, '0')}-${String(semanaLunes.getDate()).padStart(2, '0')}`;
+        const fechaFinStr = `${fechaFin.getFullYear()}-${String(fechaFin.getMonth() + 1).padStart(2, '0')}-${String(fechaFin.getDate()).padStart(2, '0')}`;
 
         // Cargar instructoras filtradas por línea (si se seleccionó una)
         let documentosInstructoras = [];
@@ -300,24 +302,16 @@ function VistaAdministrativa({ userData, onLogout }) {
     };
 
     cargarDatos();
-  }, [user, lineaSeleccionada]);
+  }, [user, lineaSeleccionada, semanaLunes]);
 
   // Filtrar horarios cuando cambia la selección
   useEffect(() => {
     let filtered = horariosTodos;
-    
-    // Filtrar por instructora
     if (instructoraSeleccionada !== 'todas') {
       filtered = filtered.filter(h => h.documento === instructoraSeleccionada);
     }
-    
-    // Filtrar por día de la semana
-    if (diaSeleccionado !== 'todos') {
-      filtered = filtered.filter(h => h.diaSemana === diaSeleccionado);
-    }
-    
     setHorariosFiltered(filtered);
-  }, [instructoraSeleccionada, diaSeleccionado, horariosTodos]);
+  }, [instructoraSeleccionada, horariosTodos]);
 
   // Resetear instructora seleccionada cuando cambia la línea
   useEffect(() => {
@@ -516,282 +510,253 @@ function VistaAdministrativa({ userData, onLogout }) {
     setShowMoreMotivosModal(false);
   };
 
-  const handleDescargarExcel = () => {
-    if (horariosFiltered.length === 0) {
-      Modal.warning({
-        title: 'Sin datos',
-        content: 'No hay horarios para descargar',
-      });
-      return;
+  // Paleta de colores pastel para filas (como en Excel)
+  const ROW_COLORS = [
+    '#FFE4E4', '#FFF5CC', '#E4F5D4', '#D4EEF7', '#EDE4F5',
+    '#FFE8D6', '#D4F0E8', '#F5D4E8', '#D4DEFF', '#FFF0D4',
+    '#E8FFD4', '#D4FFE8', '#FFE0CC', '#CCE8FF', '#F0FFD4',
+  ];
+
+  const DIAS_NOMBRES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  const getFechasSemana = () => {
+    if (!semanaLunes) return [];
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(semanaLunes);
+      d.setDate(semanaLunes.getDate() + i);
+      days.push(d);
     }
+    return days;
+  };
 
-    // Obtener el nombre de la instructora si está filtrado
-    let nombreInstructora = 'Todas las Instructoras';
-    if (instructoraSeleccionada !== 'todas') {
-      const instructora = instructoras.find(i => i.documento === instructoraSeleccionada);
-      nombreInstructora = instructora ? instructora.nombre : `Instructora ${instructoraSeleccionada}`;
-    }
-
-    // Preparar datos para Excel
-    const datosExcel = horariosFiltered.map(h => {
-      const instructora = instructoras.find(i => i.documento === h.documento);
-      return {
-        'Instructora': instructora ? instructora.nombre : h.documento,
-        'Fecha': h.fecha.toLocaleDateString('es-CO'),
-        'Día': h.fechaStr.split(',')[0],
-        'Punto de Venta': h.pdv,
-        'Actividad': h.actividad,
-        'Hora Inicio': h.horaInicio || '-',
-        'Hora Fin': h.horaFin || '-',
-        'Horas': h.horas.toFixed(1)
-      };
-    });
-
-    // Calcular totales
-    const totalHoras = horariosFiltered.reduce((sum, h) => sum + h.horas, 0);
-
-    // Agregar fila de totales
-    datosExcel.push({
-      'Instructora': '',
-      'Fecha': '',
-      'Día': '',
-      'Punto de Venta': '',
-      'Actividad': '',
-      'Hora Inicio': '',
-      'Hora Fin': 'TOTAL:',
-      'Horas': totalHoras.toFixed(1)
-    });
-
-    // Crear libro de trabajo
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(datosExcel);
-
-    // Ajustar ancho de columnas
-    const colWidths = [
-      { wch: 30 }, // Instructora
-      { wch: 12 }, // Fecha
-      { wch: 12 }, // Día
-      { wch: 35 }, // Punto de Venta
-      { wch: 25 }, // Actividad
-      { wch: 12 }, // Hora Inicio
-      { wch: 12 }, // Hora Fin
-      { wch: 10 }  // Horas
+  const buildColumnasSemanal = () => {
+    const fechasSemana = getFechasSemana();
+    const columns = [
+      {
+        title: 'No.',
+        dataIndex: 'numero',
+        key: 'numero',
+        fixed: 'left',
+        width: 55,
+        align: 'center',
+        onHeaderCell: () => ({ style: { background: '#6B4E3D', color: 'white', textAlign: 'center' } }),
+      },
+      {
+        title: 'NOMBRE INSTRUCTORA',
+        dataIndex: 'nombre',
+        key: 'nombre',
+        fixed: 'left',
+        width: 230,
+        onHeaderCell: () => ({ style: { background: '#6B4E3D', color: 'white' } }),
+      },
     ];
-    ws['!cols'] = colWidths;
+    fechasSemana.forEach(fecha => {
+      const ts = fecha.getTime();
+      const dayKey = `day_${ts}`;
+      const diaNombre = DIAS_NOMBRES[fecha.getDay()];
+      const dd = String(fecha.getDate()).padStart(2, '0');
+      const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+      const yyyy = fecha.getFullYear();
+      columns.push({
+        title: `${diaNombre} ${dd}/${mm}/${yyyy}`,
+        key: dayKey,
+        align: 'center',
+        onHeaderCell: () => ({ style: { background: '#4A7C59', color: 'white', textAlign: 'center', fontWeight: 'bold' } }),
+        children: [
+          {
+            title: 'PDV',
+            dataIndex: `${dayKey}_pdv`,
+            key: `${dayKey}_pdv`,
+            width: 130,
+            onHeaderCell: () => ({ style: { background: '#5A8C6A', color: 'white', fontWeight: 600 } }),
+            render: (text) => <span style={{ fontSize: 12 }}>{text || ''}</span>,
+          },
+          {
+            title: 'Motivo',
+            dataIndex: `${dayKey}_motivo`,
+            key: `${dayKey}_motivo`,
+            width: 150,
+            onHeaderCell: () => ({ style: { background: '#5A8C6A', color: 'white', fontWeight: 600 } }),
+            render: (text, record) => {
+              if (!text) return '';
+              const horario = record[`${dayKey}_horario`];
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                  <span style={{ fontSize: 12, flex: 1 }}>{text}</span>
+                  {horario && (
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEditarHorario(horario)}
+                      style={{ color: '#6B4E3D', padding: 0, minWidth: 18, height: 18, fontSize: 11 }}
+                    />
+                  )}
+                </div>
+              );
+            },
+          },
+        ],
+      });
+    });
+    return columns;
+  };
 
-    // Agregar hoja al libro
-    XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
-
-    // Nombre del archivo
-    const fecha = new Date().toLocaleDateString('es-CO').replace(/\//g, '-');
-    const nombreArchivo = `Horarios_${nombreInstructora.replace(/ /g, '_')}_${fecha}.xlsx`;
-
-    // Descargar archivo
-    XLSX.writeFile(wb, nombreArchivo);
-
-    Modal.success({
-      title: 'Éxito',
-      content: 'Archivo Excel descargado exitosamente',
+  const buildDatosSemanal = () => {
+    const fechasSemana = getFechasSemana();
+    const docsEnFiltrado = [...new Set(horariosFiltered.map(h => h.documento))];
+    docsEnFiltrado.sort((a, b) => {
+      const nA = instructoras.find(i => i.documento === a)?.nombre || a;
+      const nB = instructoras.find(i => i.documento === b)?.nombre || b;
+      return nA.localeCompare(nB);
+    });
+    return docsEnFiltrado.map((doc, idx) => {
+      const instructora = instructoras.find(i => i.documento === doc);
+      const row = {
+        key: doc,
+        numero: idx + 1,
+        nombre: instructora ? instructora.nombre : doc,
+        documento: doc,
+        rowIndex: idx,
+      };
+      fechasSemana.forEach(fecha => {
+        const ts = fecha.getTime();
+        const dayKey = `day_${ts}`;
+        const horario = horariosFiltered.find(h => h.documento === doc && h.fecha.getTime() === ts);
+        row[`${dayKey}_pdv`] = horario ? horario.pdv : '';
+        row[`${dayKey}_motivo`] = horario ? horario.actividad : '';
+        row[`${dayKey}_horario`] = horario || null;
+      });
+      return row;
     });
   };
 
-  const handleDescargarPDF = () => {
-    if (horariosFiltered.length === 0) {
-      Modal.warning({
-        title: 'Sin datos',
-        content: 'No hay horarios para descargar',
-      });
+  const handleDescargarExcel = () => {
+    if (horariosTodos.length === 0) {
+      Modal.warning({ title: 'Sin datos', content: 'No hay horarios para descargar' });
       return;
     }
 
-    // Obtener el nombre de la instructora si está filtrado
-    let nombreInstructora = 'Todas las Instructoras';
-    if (instructoraSeleccionada !== 'todas') {
-      const instructora = instructoras.find(i => i.documento === instructoraSeleccionada);
-      nombreInstructora = instructora ? instructora.nombre : `Instructora ${instructoraSeleccionada}`;
-    }
+    const fechasSemana = getFechasSemana();
+    const datosSemanal = buildDatosSemanal();
+    const totalCols = 2 + fechasSemana.length * 2;
 
-    // Calcular total de horas
-    const totalHoras = horariosFiltered.reduce((sum, h) => sum + h.horas, 0);
+    const fila0 = Array(totalCols).fill('');
+    fila0[0] = 'HORARIOS SEMANALES';
 
-    // Agrupar por instructora si se muestran todas
-    const horariosPorInstructora = {};
-    horariosFiltered.forEach(h => {
-      if (!horariosPorInstructora[h.documento]) {
-        const instructora = instructoras.find(i => i.documento === h.documento);
-        horariosPorInstructora[h.documento] = {
-          nombre: instructora ? instructora.nombre : `Instructora ${h.documento}`,
-          horarios: [],
-          totalHoras: 0
-        };
-      }
-      horariosPorInstructora[h.documento].horarios.push(h);
-      horariosPorInstructora[h.documento].totalHoras += h.horas;
+    const fila1 = ['No.', 'NOMBRE INSTRUCTORA'];
+    fechasSemana.forEach(fecha => {
+      const diaNombre = DIAS_NOMBRES[fecha.getDay()];
+      const dd = String(fecha.getDate()).padStart(2, '0');
+      const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+      const yyyy = fecha.getFullYear();
+      fila1.push(`${diaNombre} ${dd}/${mm}/${yyyy}`, '');
     });
 
-    // Crear ventana de impresión
-    const printWindow = window.open('', '_blank');
-    
-    let tablaHTML = '';
-    
-    if (instructoraSeleccionada === 'todas') {
-      // Mostrar agrupado por instructora
-      Object.values(horariosPorInstructora).forEach(grupo => {
-        tablaHTML += `
-          <div class="instructora-grupo">
-            <h3>${grupo.nombre} - Total: ${grupo.totalHoras.toFixed(1)} horas</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Día</th>
-                  <th>Punto de Venta</th>
-                  <th>Actividad</th>
-                  <th>Hora Inicio</th>
-                  <th>Hora Fin</th>
-                  <th>Horas</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${grupo.horarios.map(h => `
-                  <tr>
-                    <td>${h.fecha.toLocaleDateString('es-CO')}</td>
-                    <td>${h.fechaStr.split(',')[0]}</td>
-                    <td>${h.pdv}</td>
-                    <td>${h.actividad}</td>
-                    <td>${h.horaInicio || '-'}</td>
-                    <td>${h.horaFin || '-'}</td>
-                    <td>${h.horas.toFixed(1)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
+    const fila2 = ['', ''];
+    fechasSemana.forEach(() => fila2.push('PDV', 'Motivo'));
+
+    const filasData = datosSemanal.map(row => {
+      const dataRow = [row.numero, row.nombre];
+      fechasSemana.forEach(fecha => {
+        const ts = fecha.getTime();
+        const dayKey = `day_${ts}`;
+        dataRow.push(row[`${dayKey}_pdv`] || '', row[`${dayKey}_motivo`] || '');
       });
-    } else {
-      // Mostrar solo una instructora
-      tablaHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Día</th>
-              <th>Punto de Venta</th>
-              <th>Actividad</th>
-              <th>Hora Inicio</th>
-              <th>Hora Fin</th>
-              <th>Horas</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${horariosFiltered.map(h => `
-              <tr>
-                <td>${h.fecha.toLocaleDateString('es-CO')}</td>
-                <td>${h.fechaStr.split(',')[0]}</td>
-                <td>${h.pdv}</td>
-                <td>${h.actividad}</td>
-                <td>${h.horaInicio || '-'}</td>
-                <td>${h.horaFin || '-'}</td>
-                <td>${h.horas.toFixed(1)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
+      return dataRow;
+    });
+
+    const aoa = [fila0, fila1, fila2, ...filasData];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    const merges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
+      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
+    ];
+    fechasSemana.forEach((_, idx) => {
+      merges.push({ s: { r: 1, c: 2 + idx * 2 }, e: { r: 1, c: 2 + idx * 2 + 1 } });
+    });
+    ws['!merges'] = merges;
+
+    const colWidths = [{ wch: 5 }, { wch: 32 }];
+    fechasSemana.forEach(() => colWidths.push({ wch: 20 }, { wch: 22 }));
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Horarios Semanales');
+    const fecha = new Date().toLocaleDateString('es-CO').replace(/\//g, '-');
+    XLSX.writeFile(wb, `Horarios_Semanales_${fecha}.xlsx`);
+
+    Modal.success({ title: 'Éxito', content: 'Archivo Excel descargado exitosamente' });
+  };
+
+  const handleDescargarPDF = () => {
+    if (horariosTodos.length === 0) {
+      Modal.warning({ title: 'Sin datos', content: 'No hay horarios para descargar' });
+      return;
     }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Horarios Instructoras - ${nombreInstructora}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 20px;
-              color: #333;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 20px;
-              padding-bottom: 10px;
-              border-bottom: 2px solid #AECE82;
-            }
-            .header h1 {
-              color: #6B4E3D;
-              margin: 10px 0;
-            }
-            .info {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 8px;
-              margin-bottom: 20px;
-            }
-            .instructora-grupo {
-              margin-bottom: 30px;
-              page-break-inside: avoid;
-            }
-            .instructora-grupo h3 {
-              color: #6B4E3D;
-              margin-bottom: 10px;
-              padding: 10px;
-              background: #AECE82;
-              border-radius: 5px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 20px;
-            }
-            th, td {
-              padding: 10px;
-              text-align: left;
-              border: 1px solid #ddd;
-            }
-            th {
-              background-color: #6B4E3D;
-              color: white;
-              font-weight: bold;
-            }
-            tr:nth-child(even) {
-              background-color: #f9f9f9;
-            }
-            .total {
-              font-weight: bold;
-              text-align: right;
-              margin-top: 10px;
-              font-size: 18px;
-              color: #6B4E3D;
-            }
-            @media print {
-              .instructora-grupo {
-                page-break-inside: avoid;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Horarios Instructoras</h1>
-            <p>${nombreInstructora}</p>
-          </div>
-          
-          <div class="info">
-            <p><strong>Total de horarios:</strong> ${horariosFiltered.length}</p>
-            <p><strong>Total de horas:</strong> ${totalHoras.toFixed(1)} horas</p>
-            <p><strong>Fecha de generación:</strong> ${new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          </div>
-          
-          ${tablaHTML}
-          
-          <div class="total">
-            Total General: ${totalHoras.toFixed(1)} horas
-          </div>
-        </body>
-      </html>
-    `);
+    const fechasSemana = getFechasSemana();
+    const datosSemanal = buildDatosSemanal();
 
+    let thDias = '';
+    fechasSemana.forEach(fecha => {
+      const diaNombre = DIAS_NOMBRES[fecha.getDay()];
+      const dd = String(fecha.getDate()).padStart(2, '0');
+      const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+      const yyyy = fecha.getFullYear();
+      thDias += `<th colspan="2" style="background:#4A7C59;color:white;text-align:center;padding:6px;border:1px solid #ccc">${diaNombre} ${dd}/${mm}/${yyyy}</th>`;
+    });
+
+    let thSub = `<th style="background:#6B4E3D;color:white;padding:5px;border:1px solid #ccc">No.</th><th style="background:#6B4E3D;color:white;padding:5px;border:1px solid #ccc">NOMBRE INSTRUCTORA</th>`;
+    fechasSemana.forEach(() => {
+      thSub += `<th style="background:#5A8C6A;color:white;padding:5px;border:1px solid #ccc">PDV</th><th style="background:#5A8C6A;color:white;padding:5px;border:1px solid #ccc">Motivo</th>`;
+    });
+
+    let tbody = '';
+    datosSemanal.forEach((row, idx) => {
+      const bgColor = ROW_COLORS[idx % ROW_COLORS.length];
+      let cells = `<td style="background:${bgColor};text-align:center;padding:5px;border:1px solid #ccc">${row.numero}</td><td style="background:${bgColor};padding:5px;font-weight:600;border:1px solid #ccc">${row.nombre}</td>`;
+      fechasSemana.forEach(fecha => {
+        const ts = fecha.getTime();
+        const dayKey = `day_${ts}`;
+        cells += `<td style="background:${bgColor};padding:5px;border:1px solid #ccc">${row[`${dayKey}_pdv`] || ''}</td><td style="background:${bgColor};padding:5px;border:1px solid #ccc">${row[`${dayKey}_motivo`] || ''}</td>`;
+      });
+      tbody += `<tr>${cells}</tr>`;
+    });
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`<!DOCTYPE html><html>
+<head>
+  <title>Horarios Semanales Instructoras</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 15px; color: #333; font-size: 10px; }
+    h1 { color: #6B4E3D; text-align: center; margin-bottom: 8px; font-size: 16px; }
+    .info { margin-bottom: 12px; color: #555; font-size: 11px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; }
+    @media print { body { margin: 8px; } tr { page-break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <h1>HORARIOS SEMANALES</h1>
+  <div class="info">
+    <strong>Generado:</strong> ${new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+    &nbsp;|&nbsp; <strong>Instructoras:</strong> ${datosSemanal.length}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th colspan="2" style="background:#6B4E3D;color:white;padding:6px;text-align:center;border:1px solid #ccc">INSTRUCTORA</th>
+        ${thDias}
+      </tr>
+      <tr>${thSub}</tr>
+    </thead>
+    <tbody>${tbody}</tbody>
+  </table>
+</body>
+</html>`);
     printWindow.document.close();
     printWindow.print();
   };
@@ -844,6 +809,34 @@ function VistaAdministrativa({ userData, onLogout }) {
 
       {/* Filtros y Acciones */}
       <Card className="filters-card" style={{ marginBottom: 20 }}>
+        {/* Navegación de semana */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <Button icon={<LeftOutlined />} onClick={irSemanaAnterior}>Anterior</Button>
+          <DatePicker
+            value={dayjs(semanaLunes)}
+            onChange={(date) => {
+              if (date) {
+                const d = date.toDate();
+                const dow = d.getDay();
+                const diff = dow === 0 ? -6 : 1 - dow;
+                const monday = new Date(d);
+                monday.setDate(d.getDate() + diff);
+                monday.setHours(0, 0, 0, 0);
+                setSemanaLunes(monday);
+              }
+            }}
+            format="DD/MM/YYYY"
+            placeholder="Ir a fecha..."
+            style={{ width: 140 }}
+            allowClear={false}
+          />
+          <span style={{ fontWeight: 700, color: '#6B4E3D', fontSize: 14, padding: '0 4px' }}>
+            {semanaLunes.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+            {' – '}
+            {new Date(semanaLunes.getTime() + 6 * 86400000).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </span>
+          <Button onClick={irSemanaSiguiente}>Siguiente <RightOutlined /></Button>
+        </div>
         <Space size="large" wrap style={{ width: '100%', justifyContent: 'space-between' }}>
           <Space wrap>
             <Space>
@@ -877,24 +870,6 @@ function VistaAdministrativa({ userData, onLogout }) {
                 ))}
               </Select>
             </Space>
-            <Space>
-              <label style={{ fontWeight: 600, color: '#6B4E3D' }}>Filtrar por Día:</label>
-              <Select
-                style={{ minWidth: 180 }}
-                value={diaSeleccionado}
-                onChange={(value) => setDiaSeleccionado(value)}
-                placeholder="Selecciona un día"
-              >
-                <Select.Option value="todos">Todos los Días</Select.Option>
-                <Select.Option value="lunes">Lunes</Select.Option>
-                <Select.Option value="martes">Martes</Select.Option>
-                <Select.Option value="miércoles">Miércoles</Select.Option>
-                <Select.Option value="jueves">Jueves</Select.Option>
-                <Select.Option value="viernes">Viernes</Select.Option>
-                <Select.Option value="sábado">Sábado</Select.Option>
-                <Select.Option value="domingo">Domingo</Select.Option>
-              </Select>
-            </Space>
           </Space>
           <Space>
             <Button
@@ -917,105 +892,21 @@ function VistaAdministrativa({ userData, onLogout }) {
         </Space>
       </Card>
 
-      {/* Tabla de Horarios con Ant Design */}
+      {/* Tabla Semanal de Horarios */}
       <Card>
         <Table
-          dataSource={horariosFiltered.map(h => ({ ...h, key: h.id }))}
-          columns={[
-            {
-              title: 'Instructora',
-              dataIndex: 'documento',
-              key: 'instructora',
-              render: (documento) => {
-                const instructora = instructoras.find(i => i.documento === documento);
-                return instructora ? instructora.nombre : documento;
-              },
-              sorter: (a, b) => {
-                const nombreA = instructoras.find(i => i.documento === a.documento)?.nombre || '';
-                const nombreB = instructoras.find(i => i.documento === b.documento)?.nombre || '';
-                return nombreA.localeCompare(nombreB);
-              },
-            },
-            {
-              title: 'Fecha',
-              dataIndex: 'fecha',
-              key: 'fecha',
-              render: (fecha) => fecha.toLocaleDateString('es-CO'),
-              sorter: (a, b) => a.fecha - b.fecha,
-              defaultSortOrder: 'ascend',
-            },
-            {
-              title: 'Día',
-              dataIndex: 'fechaStr',
-              key: 'dia',
-              render: (fechaStr) => {
-                const dia = fechaStr.split(',')[0];
-                return <Tag color="blue">{dia}</Tag>;
-              },
-            },
-            {
-              title: 'Punto de Venta',
-              dataIndex: 'pdv',
-              key: 'pdv',
-              ellipsis: true,
-            },
-            {
-              title: 'Actividad',
-              dataIndex: 'actividad',
-              key: 'actividad',
-              render: (actividad) => {
-                let color = 'green';
-                if (actividad === 'Día de Descanso') color = 'volcano';
-                else if (actividad.includes('Retroalimentación')) color = 'geekblue';
-                else if (actividad.includes('Capacitación')) color = 'purple';
-                return <Tag color={color}>{actividad}</Tag>;
-              },
-            },
-            {
-              title: 'Hora Inicio',
-              dataIndex: 'horaInicio',
-              key: 'horaInicio',
-              render: (horaInicio) => horaInicio || '-',
-            },
-            {
-              title: 'Hora Fin',
-              dataIndex: 'horaFin',
-              key: 'horaFin',
-              render: (horaFin) => horaFin || '-',
-            },
-            {
-              title: 'Horas',
-              dataIndex: 'horas',
-              key: 'horas',
-              render: (horas) => <Tag color="cyan">{horas.toFixed(1)}h</Tag>,
-              sorter: (a, b) => a.horas - b.horas,
-            },
-            {
-              title: 'Acciones',
-              key: 'acciones',
-              render: (_, record) => (
-                <Button
-                  type="link"
-                  icon={<EditOutlined />}
-                  onClick={() => handleEditarHorario(record)}
-                  style={{ color: '#AECE82' }}
-                >
-                  Editar
-                </Button>
-              ),
-            },
-          ]}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showTotal: (total) => `Total ${total} horarios`,
-            pageSizeOptions: ['10', '20', '50', '100'],
-          }}
+          dataSource={buildDatosSemanal()}
+          columns={buildColumnasSemanal()}
+          pagination={false}
+          scroll={{ x: 'max-content', y: 580 }}
+          bordered
+          size="small"
+          onRow={(record) => ({
+            style: { background: ROW_COLORS[record.rowIndex % ROW_COLORS.length] }
+          })}
           locale={{
             emptyText: <Empty description="No hay horarios programados para mostrar" />,
           }}
-          scroll={{ x: 1200 }}
-          bordered
         />
       </Card>
 

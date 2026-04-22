@@ -40,9 +40,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
     domingo: []
   });
   
-  // Estado para festivos colombianos
-  const [festivos, setFestivos] = useState([]);
-  const [loadingFestivos, setLoadingFestivos] = useState(true);
+  const [pdvSearchText, setPdvSearchText] = useState('');
+  const [showPdvDropdown, setShowPdvDropdown] = useState(false);
   
   const diasSemana = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
   const diasSemanaLabel = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -75,6 +74,13 @@ function ProgramacionHorarios({ userData, onLogout }) {
   };
   
   const fechasSemana = useMemo(() => getFechasSemana(), [semanaOffset]);
+
+  const pdvsFiltrados = useMemo(() => {
+    if (!pdvSearchText) return puntosVenta.slice(0, 20);
+    return puntosVenta
+      .filter(p => p.nombre.toLowerCase().includes(pdvSearchText.toLowerCase()))
+      .slice(0, 20);
+  }, [pdvSearchText, puntosVenta]);
   
   // Función para formatear fecha
   const formatearFecha = (fecha) => {
@@ -149,15 +155,6 @@ function ProgramacionHorarios({ userData, onLogout }) {
 
   // Función para abrir modal para agregar evento en un día específico
   const handleAgregarEventoDia = (diaKey, diaIndex) => {
-    // Verificar si es festivo
-    const fechaDia = fechasSemana[diaIndex];
-    const festivoInfo = esFestivo(fechaDia);
-    
-    if (festivoInfo) {
-      alert(`No se puede programar actividades en ${festivoInfo.nombre}`);
-      return;
-    }
-    
     setDiaSeleccionado({ dia: diaKey, index: diaIndex });
     setEventoEditarModal(null);
     setFormDataModal({
@@ -168,6 +165,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
       detalleCubrir: '',
       detalleOtro: ''
     });
+    setPdvSearchText('');
+    setShowPdvDropdown(false);
     setShowMoreMotivosModal(false);
     setModalEditar(true);
   };
@@ -189,34 +188,6 @@ function ProgramacionHorarios({ userData, onLogout }) {
       fechaInicio: primerDia,
       fechaFin: ultimoDia
     };
-  };
-
-  // Cargar festivos colombianos
-  useEffect(() => {
-    const cargarFestivos = async () => {
-      try {
-        setLoadingFestivos(true);
-        const response = await axios.get('https://date.nager.at/api/v3/PublicHolidays/2026/CO');
-        setFestivos(response.data);
-      } catch (error) {
-        console.error('Error al cargar festivos:', error);
-        setFestivos([]);
-      } finally {
-        setLoadingFestivos(false);
-      }
-    };
-    
-    cargarFestivos();
-  }, []);
-
-  // Función para verificar si una fecha es festivo
-  const esFestivo = (fecha) => {
-    if (!fecha || festivos.length === 0) return null;
-    
-    const fechaStr = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
-    
-    const festivo = festivos.find(f => f.date === fechaStr);
-    return festivo ? { nombre: festivo.localName, tipo: festivo.types?.[0] || 'Public' } : null;
   };
 
   // Verificar autenticación y cargar datos
@@ -253,10 +224,6 @@ function ProgramacionHorarios({ userData, onLogout }) {
         })
         .catch(() => {});
     }
-
-    // Limpiar puntos de venta anteriores antes de cargar nuevos
-    setPuntosVenta([]);
-    cargarPuntosVenta(instructoraData);
   }, [navigate, userData]);
 
   // Guardar programación en localStorage cuando cambie
@@ -394,92 +361,46 @@ function ProgramacionHorarios({ userData, onLogout }) {
     cargarHorariosAPI();
   }, [user, semanaOffset]);
 
-  // Relacionar puntos de venta cargados con la programación del API
+  // Cargar todos los puntos de venta del sistema
   useEffect(() => {
-    if (puntosVenta.length === 0) return;
+    cargarPuntosVenta();
+  }, []);
 
-    // Actualizar los puntoVentaId en la programación
-    setProgramacionSemanal(prev => {
-      const nuevaProg = { ...prev };
-      
-      diasSemana.forEach(dia => {
-        nuevaProg[dia] = prev[dia].map(evento => {
-          // Buscar el punto de venta que coincida con el nombre
-          const pdv = puntosVenta.find(p => p.nombre === evento.puntoVenta);
-          return {
-            ...evento,
-            puntoVentaId: pdv ? String(pdv.id) : ''
-          };
-        });
-      });
-      
-      return nuevaProg;
-    });
-  }, [puntosVenta]);
-
-  // Cargar puntos de venta de la instructora
-  const cargarPuntosVenta = async (userData) => {
+  // Cargar todos los puntos de venta del sistema
+  const cargarPuntosVenta = async () => {
     try {
       setLoadingPuntos(true);
-      
-      // Obtener el documento de la instructora logueada
-      const documento = userData.document_number || userData.documento || userData.cedula;
-      
-      if (!documento) {
-        alert('Error: No se encontró el documento de la instructora');
-        setPuntosVenta([]);
-        return;
-      }
+      let allPdvs = [];
+      let page = 1;
+      const pageSize = 200;
+      let hasMore = true;
 
-      // Limpiar el documento de espacios o caracteres extraños
-      const documentoLimpio = String(documento).trim();
-      
-      // Filtrar directamente por el documento de la instructora en el API
-      const url = `https://macfer.crepesywaffles.com/api/cap-instructoras?filter[documento][$eq]=${documentoLimpio}&populate[cap_pdvs]=*`;
-      
-      const response = await axios.get(url);
-
-      // Verificar si se encontró la instructora y tiene puntos de venta
-      if (response.data?.data && response.data.data.length > 0) {
-        
-        // VALIDACIÓN ESTRICTA: buscar la instructora que coincida EXACTAMENTE con el documento
-        const instructoraActual = response.data.data.find(inst => 
-          String(inst.attributes.documento).trim() === documentoLimpio
+      while (hasMore) {
+        const response = await axios.get(
+          `https://macfer.crepesywaffles.com/api/pdv-Ips?pagination[page]=${page}&pagination[pageSize]=${pageSize}&sort=pdv:asc`
         );
-        
-        if (!instructoraActual) {
-          alert(`No se encontró la instructora con documento ${documentoLimpio} en el sistema de capacitación`);
-          setPuntosVenta([]);
-          return;
-        }
-        
-        if (instructoraActual.attributes.cap_pdvs?.data && instructoraActual.attributes.cap_pdvs.data.length > 0) {
-          
-          // Filtrar solo los puntos de venta activos
-          const puntosActivos = instructoraActual.attributes.cap_pdvs.data
-            .filter(pdv => pdv.attributes?.activo === true)
-            .map(pdv => ({
-              id: pdv.id,
-              nombre: pdv.attributes.nombre
-            }))
-            .sort((a, b) => a.nombre.localeCompare(b.nombre));
-          
-          if (puntosActivos.length > 0) {
-            setPuntosVenta(puntosActivos);
-          } else {
-            alert('Esta instructora no tiene puntos de venta activos asignados');
-            setPuntosVenta([]);
-          }
+        const raw = response.data?.data || response.data || [];
+        if (!Array.isArray(raw) || raw.length === 0) { hasMore = false; break; }
+
+        const pdvs = raw
+          .map(item => ({
+            id: item.id,
+            nombre: item.attributes?.pdv || item.pdv || ''
+          }))
+          .filter(p => p.nombre);
+
+        allPdvs = [...allPdvs, ...pdvs];
+        const total = response.data?.meta?.pagination?.total;
+        if ((total && allPdvs.length >= total) || raw.length < pageSize) {
+          hasMore = false;
         } else {
-          alert('Esta instructora no tiene puntos de venta asignados');
-          setPuntosVenta([]);
+          page++;
         }
-      } else {
-        alert(`No se encontró la instructora con el documento ${documentoLimpio}`);
-        setPuntosVenta([]);
       }
+
+      setPuntosVenta(allPdvs.sort((a, b) => a.nombre.localeCompare(b.nombre)));
     } catch (error) {
-      alert('Error al cargar los puntos de venta. Por favor intenta nuevamente.');
+      console.error('Error al cargar puntos de venta:', error);
       setPuntosVenta([]);
     } finally {
       setLoadingPuntos(false);
@@ -506,31 +427,58 @@ function ProgramacionHorarios({ userData, onLogout }) {
     }
   };
 
+  // Función para marcar un día como descanso directamente desde la tarjeta
+  const handleDiaDescanso = async (diaKey, diaIndex) => {
+    if (!user) return;
+    if (!window.confirm(`¿Marcar el ${diasSemanaLabel[diaIndex]} como Día de Descanso?`)) return;
+    setGuardandoDia(true);
+    try {
+      const fecha = fechasSemana[diaIndex];
+      const fechaFormateada = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+      const documento = user.document_number || user.documento || user.cedula;
+      const datosAPI = {
+        data: {
+          pdv_nombre: 'N/A',
+          fecha: fechaFormateada,
+          hora_inicio: '00:00:00',
+          hora_fin: '00:00:00',
+          actividad: 'Día de Descanso',
+          documento: String(documento)
+        }
+      };
+      const response = await axios.post('https://macfer.crepesywaffles.com/api/horarios-instructoras', datosAPI);
+      const idAPI = response.data.data.id;
+      const eventoDescanso = {
+        puntoVenta: 'N/A',
+        puntoVentaId: '',
+        horaInicio: '',
+        horaFin: '',
+        motivo: 'dia_descanso',
+        detalleCubrir: '',
+        detalleOtro: '',
+        fechaModificacion: new Date().toISOString(),
+        horaModificacion: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        idAPI
+      };
+      setProgramacionSemanal(prev => ({
+        ...prev,
+        [diaKey]: [...prev[diaKey], eventoDescanso]
+      }));
+      alert(`✅ ${diasSemanaLabel[diaIndex]} marcado como Día de Descanso`);
+    } catch (error) {
+      console.error('Error al guardar día de descanso:', error);
+      alert('❌ Error al guardar. Intenta nuevamente.');
+    } finally {
+      setGuardandoDia(false);
+    }
+  };
+
   const handleEditarEvento = (dia, index, evento, diaIndex) => {
     console.log('🔥 Editando evento:', { dia, index, evento });
     
-    // Verificar si es festivo
-    const fechaDia = fechasSemana[diaIndex];
-    const festivoInfo = esFestivo(fechaDia);
-    
-    if (festivoInfo) {
-      alert(`No se puede editar actividades en ${festivoInfo.nombre}`);
-      return;
-    }
-    
-    // Buscar el ID del punto de venta
-    let puntoVentaId = evento.puntoVentaId || '';
-    
-    if (!puntoVentaId && evento.puntoVenta) {
-      const pdvEncontrado = puntosVenta.find(p => p.nombre === evento.puntoVenta);
-      if (pdvEncontrado) {
-        puntoVentaId = String(pdvEncontrado.id);
-      }
-    }
-    
     // Cargar datos en el formulario del modal
     setFormDataModal({
-      puntoVenta: puntoVentaId,
+      puntoVenta: evento.puntoVenta && evento.puntoVenta !== 'N/A' ? evento.puntoVenta : '',
       horaInicio: evento.horaInicio || '',
       horaFin: evento.horaFin || '',
       motivo: evento.motivo || '',
@@ -538,9 +486,13 @@ function ProgramacionHorarios({ userData, onLogout }) {
       detalleOtro: evento.detalleOtro || ''
     });
     
+    // Pre-llenar el texto de búsqueda del PDV
+    setPdvSearchText(evento.puntoVenta && evento.puntoVenta !== 'N/A' ? evento.puntoVenta : '');
+    setShowPdvDropdown(false);
+    
     // Verificar si necesita expandir motivos
     const motivosExpandibles = [
-      'dia_descanso', 'visita', 'induccion', 'cubrir_puesto', 'disponible',
+      'visita', 'induccion', 'cubrir_puesto', 'disponible',
       'fotos', 'escuela_cafe', 'sintonizarte', 'viaje', 'pg', 'apoyo', 'reunion',
       'cambio_turno', 'apertura', 'lanzamiento', 'vacaciones', 'incapacidad',
       'dia_familia', 'permiso_no_remunerado', 'licencia_no_remunerada',
@@ -580,8 +532,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
       return;
     }
 
-    // Validar punto de venta solo si no es día de descanso o vacaciones
-    if (formDataModal.motivo !== 'dia_descanso' && formDataModal.motivo !== 'vacaciones' && !formDataModal.puntoVenta) {
+    // Validar punto de venta solo si no es vacaciones
+    if (formDataModal.motivo !== 'vacaciones' && !formDataModal.puntoVenta) {
       alert('Por favor selecciona un punto de venta');
       return;
     }
@@ -595,10 +547,10 @@ function ProgramacionHorarios({ userData, onLogout }) {
       return;
     }
 
-    // Validar horas solo si no es día de descanso o vacaciones
-    if (formDataModal.motivo !== 'dia_descanso' && formDataModal.motivo !== 'vacaciones') {
+    // Validar horas solo si no es vacaciones
+    if (formDataModal.motivo !== 'vacaciones') {
       if (!formDataModal.horaInicio || !formDataModal.horaFin) {
-        alert('Por favor ingresa hora de inicio y fin');
+        alert('Por favor ingresa hora de inicio y fin en formato HH:MM');
         return;
       }
 
@@ -658,9 +610,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
     setGuardandoDia(true);
 
     try {
-      // Obtener nombre del punto de venta
-      const puntoVentaObj = puntosVenta.find(p => String(p.id) === formDataModal.puntoVenta);
-      const puntoVentaNombre = puntoVentaObj ? puntoVentaObj.nombre : (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones' ? 'N/A' : '');
+      // Obtener nombre del punto de venta directamente
+      const puntoVentaNombre = formDataModal.puntoVenta || (formDataModal.motivo === 'vacaciones' ? 'N/A' : '');
 
       // Determinar la actividad según el motivo
       let actividad = motivosLabels[formDataModal.motivo] || formDataModal.motivo;
@@ -675,8 +626,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
       const fechaFormateada = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
 
       // Preparar datos para el API
-      const horaInicio = (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '00:00:00' : `${formDataModal.horaInicio}:00`;
-      const horaFin = (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '00:00:00' : `${formDataModal.horaFin}:00`;
+      const horaInicio = formDataModal.motivo === 'vacaciones' ? '00:00:00' : `${formDataModal.horaInicio}:00`;
+      const horaFin = formDataModal.motivo === 'vacaciones' ? '00:00:00' : `${formDataModal.horaFin}:00`;
       
       const documento = user.document_number || user.documento || user.cedula;
 
@@ -710,9 +661,9 @@ function ProgramacionHorarios({ userData, onLogout }) {
       // Crear evento actualizado para el estado local
       const eventoActualizado = {
         puntoVenta: puntoVentaNombre || 'N/A',
-        puntoVentaId: formDataModal.puntoVenta || '',
-        horaInicio: (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '' : formDataModal.horaInicio,
-        horaFin: (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '' : formDataModal.horaFin,
+        puntoVentaId: '',
+        horaInicio: formDataModal.motivo === 'vacaciones' ? '' : formDataModal.horaInicio,
+        horaFin: formDataModal.motivo === 'vacaciones' ? '' : formDataModal.horaFin,
         motivo: formDataModal.motivo,
         detalleCubrir: formDataModal.detalleCubrir,
         detalleOtro: formDataModal.detalleOtro,
@@ -763,6 +714,8 @@ function ProgramacionHorarios({ userData, onLogout }) {
       detalleCubrir: '',
       detalleOtro: ''
     });
+    setPdvSearchText('');
+    setShowPdvDropdown(false);
     setShowMoreMotivosModal(false);
   };
 
@@ -1003,7 +956,27 @@ function ProgramacionHorarios({ userData, onLogout }) {
         {/* Agenda Semanal Simplificada */}
         <div className="agenda-section-simplified">
           <div className="agenda-header-section">
-            <h2 className="section-title">Programación de la Próxima Semana</h2>
+            <div>
+              <h2 className="section-title">Programación Semanal</h2>
+              <div className="semana-nav-controls">
+                <button className="btn-semana-nav" onClick={() => setSemanaOffset(prev => prev - 1)}>
+                  ← Anterior
+                </button>
+                <span className="semana-label-nav">
+                  {fechasSemana[0] && fechasSemana[6]
+                    ? `${formatearFecha(fechasSemana[0])} – ${formatearFecha(fechasSemana[6])}`
+                    : ''}
+                </span>
+                <button className="btn-semana-nav" onClick={() => setSemanaOffset(prev => prev + 1)}>
+                  Siguiente →
+                </button>
+                {semanaOffset !== 0 && (
+                  <button className="btn-semana-nav btn-semana-reset" onClick={() => setSemanaOffset(0)}>
+                    Próxima Semana
+                  </button>
+                )}
+              </div>
+            </div>
             <button 
               className="btn-cerrar-programacion"
               onClick={handleCerrarProgramacion}
@@ -1020,12 +993,9 @@ function ProgramacionHorarios({ userData, onLogout }) {
             {diasSemana.map((dia, diaIndex) => {
               const eventos = programacionSemanal[dia];
               const horasDia = calcularHorasDia(dia);
-              const fechaDia = fechasSemana[diaIndex];
-              const festivoInfo = esFestivo(fechaDia);
-              const esDiaFestivo = festivoInfo !== null;
-              
+
               return (
-                <div key={dia} className={`dia-card ${esDiaFestivo ? 'dia-festivo' : ''}`}>
+                <div key={dia} className="dia-card">
                   <div className="dia-card-header">
                     <div className="dia-info">
                       <div className="dia-nombre">{diasSemanaLabel[diaIndex]}</div>
@@ -1033,67 +1003,31 @@ function ProgramacionHorarios({ userData, onLogout }) {
                     </div>
                     <div className="dia-horas">{horasDia.toFixed(1)}h</div>
                   </div>
-                  
-                  {esDiaFestivo && (
-                    <div className="festivo-banner">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                      </svg>
-                      <span>{festivoInfo.nombre}</span>
-                    </div>
-                  )}
-                  
+
                   <div className="dia-card-body">
                     {eventos.length === 0 ? (
                       <div className="sin-eventos">
-                        {esDiaFestivo ? (
-                          <div className="mensaje-festivo">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                              <line x1="16" y1="2" x2="16" y2="6"></line>
-                              <line x1="8" y1="2" x2="8" y2="6"></line>
-                              <line x1="3" y1="10" x2="21" y2="10"></line>
-                              <line x1="8" y1="14" x2="16" y2="14"></line>
-                              <line x1="8" y1="18" x2="16" y2="18"></line>
-                            </svg>
-                            <p>Día festivo</p>
-                            <span className="submensaje">No se puede programar</span>
-                          </div>
-                        ) : (
-                          <button 
-                            className="btn-agregar-evento"
-                            onClick={() => handleAgregarEventoDia(dia, diaIndex)}
-                            disabled={loadingPuntos || puntosVenta.length === 0}
-                          >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="12" y1="5" x2="12" y2="19"></line>
-                              <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                            Agregar actividad
-                          </button>
-                        )}
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#bbb', fontStyle: 'italic' }}>Sin actividades</p>
                       </div>
                     ) : (
                       <div className="eventos-lista">
                         {eventos.map((evento, eventoIndex) => (
-                          <div 
-                            key={eventoIndex} 
-                            className={`evento-item ${esDiaFestivo ? 'evento-deshabilitado' : ''}`}
-                            onClick={!esDiaFestivo ? () => handleEditarEvento(dia, eventoIndex, evento, diaIndex) : undefined}
-                            style={{ cursor: esDiaFestivo ? 'not-allowed' : 'pointer' }}
+                          <div
+                            key={eventoIndex}
+                            className="evento-item"
+                            onClick={() => handleEditarEvento(dia, eventoIndex, evento, diaIndex)}
+                            style={{ cursor: evento.motivo === 'dia_descanso' ? 'default' : 'pointer' }}
                           >
                             <div className="evento-hora">
-                              {(evento.motivo === 'dia_descanso' || evento.motivo === 'vacaciones') ? 
-                                'Todo el día' : 
+                              {(evento.motivo === 'dia_descanso' || evento.motivo === 'vacaciones') ?
+                                'Todo el día' :
                                 `${evento.horaInicio} - ${evento.horaFin}`
                               }
                             </div>
                             <div className="evento-info">
                               <div className="evento-pdv">{evento.puntoVenta}</div>
                               <div className="evento-motivo">
-                                {evento.motivo === 'otro' ? evento.detalleOtro : 
+                                {evento.motivo === 'otro' ? evento.detalleOtro :
                                  evento.motivo === 'cubrir_puesto' ? `Cubrir - ${evento.detalleCubrir}` :
                                  (motivosLabels[evento.motivo] || evento.motivo)}
                               </div>
@@ -1103,6 +1037,30 @@ function ProgramacionHorarios({ userData, onLogout }) {
                       </div>
                     )}
                   </div>
+
+                  {eventos.length === 0 && (
+                    <div className="dia-card-footer">
+                      <button
+                        className="btn-agregar-evento"
+                        onClick={() => handleAgregarEventoDia(dia, diaIndex)}
+                        disabled={loadingPuntos || guardandoDia}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Agendar
+                      </button>
+                      <button
+                        className="btn-dia-descanso"
+                        onClick={() => handleDiaDescanso(dia, diaIndex)}
+                        disabled={guardandoDia}
+                        title="Marcar como día de descanso"
+                      >
+                        Descanso
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1156,47 +1114,76 @@ function ProgramacionHorarios({ userData, onLogout }) {
 
             <div className="modal-body">
               <div className="form-group-modal">
-                <label htmlFor="puntoVenta-modal">
-                  Punto de Venta {(formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '(opcional)' : '*'}
+                <label>
+                  Punto de Venta {formDataModal.motivo === 'vacaciones' ? '(opcional)' : '*'}
                 </label>
-                <select
-                  id="puntoVenta-modal"
-                  name="puntoVenta"
-                  value={formDataModal.puntoVenta}
-                  onChange={handleInputChangeModal}
-                  disabled={formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones'}
-                  className="form-select-modal"
-                >
-                  <option value="">Selecciona un punto de venta</option>
-                  {puntosVenta.map(pdv => (
-                    <option key={pdv.id} value={String(pdv.id)}>{pdv.nombre}</option>
-                  ))}
-                </select>
+                <div className="pdv-search-container">
+                  <input
+                    type="text"
+                    className="form-input-modal"
+                    placeholder={loadingPuntos ? 'Cargando puntos de venta...' : 'Escribe para buscar PDV...'}
+                    value={pdvSearchText}
+                    onChange={(e) => {
+                      setPdvSearchText(e.target.value);
+                      setShowPdvDropdown(true);
+                      if (formDataModal.puntoVenta && e.target.value !== formDataModal.puntoVenta) {
+                        setFormDataModal(prev => ({ ...prev, puntoVenta: '' }));
+                      }
+                    }}
+                    onFocus={() => setShowPdvDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowPdvDropdown(false), 150)}
+                    disabled={formDataModal.motivo === 'vacaciones' || loadingPuntos}
+                    autoComplete="off"
+                  />
+                  {showPdvDropdown && pdvsFiltrados.length > 0 && (
+                    <div className="pdv-dropdown">
+                      {pdvsFiltrados.map(pdv => (
+                        <div
+                          key={pdv.id}
+                          className="pdv-option"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setFormDataModal(prev => ({ ...prev, puntoVenta: pdv.nombre }));
+                            setPdvSearchText(pdv.nombre);
+                            setShowPdvDropdown(false);
+                          }}
+                        >
+                          {pdv.nombre}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {formDataModal.puntoVenta && (
+                  <span style={{ fontSize: '0.8rem', color: '#28a745', marginTop: '2px' }}>
+                    ✓ Seleccionado: {formDataModal.puntoVenta}
+                  </span>
+                )}
               </div>
 
               <div className="form-row-modal">
                 <div className="form-group-modal">
-                  <label htmlFor="horaInicio-modal">Hora Inicio</label>
+                  <label htmlFor="horaInicio-modal">Hora Inicio <span style={{ fontWeight: 400, fontSize: '0.8rem', color: '#999' }}>(formato 24h)</span></label>
                   <input
                     type="time"
                     id="horaInicio-modal"
                     name="horaInicio"
                     value={formDataModal.horaInicio}
                     onChange={handleInputChangeModal}
-                    disabled={formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones'}
+                    disabled={formDataModal.motivo === 'vacaciones'}
                     className="form-input-modal"
                   />
                 </div>
 
                 <div className="form-group-modal">
-                  <label htmlFor="horaFin-modal">Hora Fin</label>
+                  <label htmlFor="horaFin-modal">Hora Fin <span style={{ fontWeight: 400, fontSize: '0.8rem', color: '#999' }}>(formato 24h)</span></label>
                   <input
                     type="time"
                     id="horaFin-modal"
                     name="horaFin"
                     value={formDataModal.horaFin}
                     onChange={handleInputChangeModal}
-                    disabled={formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones'}
+                    disabled={formDataModal.motivo === 'vacaciones'}
                     className="form-input-modal"
                   />
                 </div>
@@ -1229,13 +1216,6 @@ function ProgramacionHorarios({ userData, onLogout }) {
                   
                   {showMoreMotivosModal && (
                     <>
-                      <button
-                        type="button"
-                        className={`motivo-btn-modal ${formDataModal.motivo === 'dia_descanso' ? 'active' : ''}`}
-                        onClick={() => setFormDataModal({ ...formDataModal, motivo: 'dia_descanso' })}
-                      >
-                        Día de Descanso
-                      </button>
                       <button
                         type="button"
                         className={`motivo-btn-modal ${formDataModal.motivo === 'visita' ? 'active' : ''}`}

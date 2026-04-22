@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import axios from 'axios';
+import { Table, Tag, Button, Modal, Form, Input, Select, Space, Card, Tooltip } from 'antd';
+import { EyeOutlined, DownloadOutlined, EditOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import 'antd/dist/reset.css';
 import '../styles/Dashboard.css';
 
 function Dashboard({ userData, onLogout }) {
@@ -28,6 +30,7 @@ function Dashboard({ userData, onLogout }) {
   });
   const [showMoreMotivosModal, setShowMoreMotivosModal] = useState(false);
   const [filaExpandida, setFilaExpandida] = useState(null);
+  const [semanaOffset, setSemanaOffset] = useState(0); // 0 = próxima semana, -1 = semana anterior, etc.
 
   // Verificar autenticación
   useEffect(() => {
@@ -65,25 +68,79 @@ function Dashboard({ userData, onLogout }) {
     }
   }, [navigate, userData]);
 
-  // Cargar datos del API
+  // Cargar horarios de la próxima semana
   useEffect(() => {
     if (!user) return;
 
     const cargarHorarios = async () => {
       try {
-        const response = await fetch(`https://macfer.crepesywaffles.com/api/horario-instructoras?filters[documento][$eq]=${user.documento}&populate=*`);
-        
-        if (response.ok) {
-          const result = await response.json();
-          
-          if (result.data && result.data.length > 0) {
-            const horariosAgrupados = agruparHorariosPorSemana(result.data);
-            setHorariosData(horariosAgrupados);
-          } else {
-            setHorariosData([]);
-          }
+        const documento = user.documento;
+        if (!documento) return;
+
+        const hoy = new Date();
+        const diaSemana = hoy.getDay();
+        const proximoLunes = new Date(hoy);
+
+        let diasHastaProximoLunes;
+        if (diaSemana === 0) {
+          diasHastaProximoLunes = 1;
+        } else if (diaSemana === 1) {
+          diasHastaProximoLunes = 7;
+        } else {
+          diasHastaProximoLunes = 8 - diaSemana;
+        }
+
+        proximoLunes.setDate(hoy.getDate() + diasHastaProximoLunes + (semanaOffset * 7));
+        const proximoDomingo = new Date(proximoLunes);
+        proximoDomingo.setDate(proximoLunes.getDate() + 6);
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const fechaInicioStr = `${proximoLunes.getFullYear()}-${pad(proximoLunes.getMonth() + 1)}-${pad(proximoLunes.getDate())}`;
+        const fechaFinStr = `${proximoDomingo.getFullYear()}-${pad(proximoDomingo.getMonth() + 1)}-${pad(proximoDomingo.getDate())}`;
+
+        const url = `https://macfer.crepesywaffles.com/api/horarios-instructoras?filters[documento][$eq]=${documento}&filters[fecha][$gte]=${fechaInicioStr}&filters[fecha][$lte]=${fechaFinStr}&pagination[pageSize]=40000`;
+        const response = await axios.get(url);
+
+        const primerDiaMes = new Date(proximoLunes.getFullYear(), proximoLunes.getMonth(), 1);
+        const diasHastaPrimerLunes = (8 - primerDiaMes.getDay()) % 7;
+        const numeroSemana = Math.ceil((proximoLunes.getDate() - diasHastaPrimerLunes) / 7) + 1;
+
+        if (response.data?.data && response.data.data.length > 0) {
+          const detalles = response.data.data.map(item => {
+            const fechaStr = item.attributes.fecha;
+            const [year, month, day] = fechaStr.split('-').map(Number);
+            return {
+              fecha: new Date(year, month - 1, day),
+              pdv: item.attributes.pdv_nombre,
+              actividad: item.attributes.actividad,
+              horaInicio: item.attributes.hora_inicio,
+              horaFin: item.attributes.hora_fin
+            };
+          }).sort((a, b) => a.fecha - b.fecha);
+
+          setHorariosDetalles(detalles);
+
+          const totalHorasCalc = detalles.reduce((sum, d) => {
+            if (d.horaInicio && d.horaFin) {
+              const [hi, mi] = d.horaInicio.split(':').map(Number);
+              const [hf, mf] = d.horaFin.split(':').map(Number);
+              return sum + (hf * 60 + mf - (hi * 60 + mi)) / 60;
+            }
+            return sum;
+          }, 0);
+
+          setHorariosData([{
+            key: 'semana-actual',
+            numeroSemana,
+            fechaInicio: proximoLunes,
+            fechaFin: proximoDomingo,
+            totalHoras: totalHorasCalc
+          }]);
+          setInfoSemana({ numero: numeroSemana, fechaInicio: proximoLunes, fechaFin: proximoDomingo });
         } else {
           setHorariosData([]);
+          setHorariosDetalles([]);
+          setInfoSemana({ numero: numeroSemana, fechaInicio: proximoLunes, fechaFin: proximoDomingo });
         }
       } catch (error) {
         console.error('Error al cargar horarios:', error);
@@ -92,29 +149,28 @@ function Dashboard({ userData, onLogout }) {
     };
 
     cargarHorarios();
-  }, [user]);
+  }, [user, semanaOffset]);
 
-  // Cargar puntos de venta
+  // Cargar puntos de venta de la instructora
   useEffect(() => {
     if (!user) return;
 
     const cargarPuntosVenta = async () => {
       try {
-        const response = await fetch('https://macfer.crepesywaffles.com/api/pdvs?pagination[limit]=1000');
-        
-        if (response.ok) {
-          const result = await response.json();
-          
-          if (result.data && result.data.length > 0) {
-            const pdvsArray = result.data.map(item => ({
-              id: item.id,
-              codigo: item.codigo || '',
-              nombre: item.nombre || '',
-              ciudad: item.ciudad || '',
-              linea: item.linea || ''
-            }));
-            
-            setPuntosVenta(pdvsArray);
+        const documentoLimpio = String(user.documento).trim();
+        const url = `https://macfer.crepesywaffles.com/api/cap-instructoras?filter[documento][$eq]=${documentoLimpio}&populate[cap_pdvs]=*`;
+        const response = await axios.get(url);
+
+        if (response.data?.data?.length > 0) {
+          const instructoraActual = response.data.data.find(inst =>
+            String(inst.attributes.documento).trim() === documentoLimpio
+          );
+          if (instructoraActual?.attributes.cap_pdvs?.data) {
+            const puntosActivos = instructoraActual.attributes.cap_pdvs.data
+              .filter(pdv => pdv.attributes?.activo === true)
+              .map(pdv => ({ id: pdv.id, nombre: pdv.attributes.nombre }))
+              .sort((a, b) => a.nombre.localeCompare(b.nombre));
+            setPuntosVenta(puntosActivos);
           }
         }
       } catch (error) {
@@ -125,75 +181,40 @@ function Dashboard({ userData, onLogout }) {
     cargarPuntosVenta();
   }, [user]);
 
-  const agruparHorariosPorSemana = (horarios) => {
-    // Implementación de agrupación por semana
-    const semanas = {};
-    
-    horarios.forEach(horario => {
-      const semanaKey = `${horario.anio}-S${horario.numero_semana}`;
-      
-      if (!semanas[semanaKey]) {
-        semanas[semanaKey] = {
-          semana: horario.numero_semana,
-          anio: horario.anio,
-          fechaInicio: horario.fecha_inicio,
-          fechaFin: horario.fecha_fin,
-          totalHoras: 0,
-          detalles: []
-        };
-      }
-      
-      const horas = calcularHoras(horario.hora_inicio, horario.hora_fin);
-      semanas[semanaKey].totalHoras += horas;
-      semanas[semanaKey].detalles.push(horario);
-    });
-    
-    return Object.values(semanas).sort((a, b) => {
-      if (a.anio !== b.anio) return b.anio - a.anio;
-      return b.semana - a.semana;
-    });
-  };
-
-  const calcularHoras = (horaInicio, horaFin) => {
-    if (!horaInicio || !horaFin) return 0;
-    const [hi, mi] = horaInicio.split(':').map(Number);
-    const [hf, mf] = horaFin.split(':').map(Number);
-    return ((hf * 60 + mf) - (hi * 60 + mi)) / 60;
-  };
-
   const formatearFecha = (fecha) => {
-    return new Date(fecha).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+    if (!fecha) return '';
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    return `${fecha.getDate()} ${meses[fecha.getMonth()]}`;
   };
 
   const getInitials = (name) => {
-    if (!name) return '?';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
+    if (!name) return 'U';
+    const names = name.split(' ');
+    if (names.length >= 2) return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    return name[0].toUpperCase();
   };
 
   const totalHoras = horariosData.reduce((sum, item) => sum + item.totalHoras, 0);
 
   const formatearRangoFechas = (fechaInicio, fechaFin) => {
-    const inicio = new Date(fechaInicio);
-    const fin = new Date(fechaFin);
-    return `${inicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} - ${fin.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    if (!fechaInicio || !fechaFin) return '';
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    return `${fechaInicio.getDate()} - ${fechaFin.getDate()} ${meses[fechaInicio.getMonth()]}`;
+  };
+
+  const getDiaSemana = (fecha) => {
+    const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    return dias[fecha.getDay()];
+  };
+
+  const formatearFechaCompleta = (fecha) => {
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    return `${fecha.getDate()} de ${meses[fecha.getMonth()]} de ${fecha.getFullYear()}`;
   };
 
   const handleVer = (semana) => {
-    // Placeholder para vista previa
-    console.log('Ver semana:', semana);
-  };
-
-  const handleEditar = (semana) => {
-    navigate('/portal/horarios-instructoras/instructor/programacion');
-  };
-
-  const handleDescargarPDF = (semana) => {
-    // Placeholder para descarga PDF
-    console.log('Descargar PDF semana:', semana);
+    setSemanaPreview(semana);
+    setShowPreviewModal(true);
   };
 
   const motivosLabels = {
@@ -224,8 +245,219 @@ function Dashboard({ userData, onLogout }) {
     'licencia_luto': 'Licencia por Luto'
   };
 
-  const handleVolverMenu = () => {
-    navigate('/menu');
+  const actividadAMotivo = {
+    'Retroalimentación': 'retroalimentacion',
+    'Acompañamiento': 'acompañamiento',
+    'Capacitación': 'capacitacion',
+    'Día de Descanso': 'dia_descanso',
+    'Visita': 'visita',
+    'Inducción': 'induccion',
+    'Cubrir Puesto': 'cubrir_puesto',
+    'Disponible': 'disponible',
+    'Fotos': 'fotos',
+    'Escuela del Café': 'escuela_cafe',
+    'Sintonizarte': 'sintonizarte',
+    'Viaje': 'viaje',
+    'P&G': 'pg',
+    'Apoyo': 'apoyo',
+    'Reunión': 'reunion',
+    'Cambio de Turno': 'cambio_turno',
+    'Apertura': 'apertura',
+    'Lanzamiento': 'lanzamiento',
+    'Vacaciones': 'vacaciones',
+    'Incapacidad': 'incapacidad',
+    'Día de la Familia': 'dia_familia',
+    'Permiso No Remunerado': 'permiso_no_remunerado',
+    'Licencia No Remunerada': 'licencia_no_remunerada',
+    'Licencia Remunerada': 'licencia_remunerada',
+    'Licencia por Luto': 'licencia_luto'
+  };
+
+  const handleEditarActividad = (detalle) => {
+    const pdvEncontrado = puntosVenta.find(p => p.nombre === detalle.pdv);
+    const puntoVentaId = pdvEncontrado ? String(pdvEncontrado.id) : '';
+    const motivo = actividadAMotivo[detalle.actividad] || 'otro';
+    const detalleOtro = !actividadAMotivo[detalle.actividad] ? detalle.actividad : '';
+
+    setFormDataModal({
+      puntoVenta: puntoVentaId,
+      horaInicio: detalle.horaInicio ? detalle.horaInicio.substring(0, 5) : '',
+      horaFin: detalle.horaFin ? detalle.horaFin.substring(0, 5) : '',
+      motivo,
+      detalleCubrir: '',
+      detalleOtro
+    });
+
+    const motivosExpandibles = [
+      'dia_descanso', 'visita', 'induccion', 'cubrir_puesto', 'disponible',
+      'fotos', 'escuela_cafe', 'sintonizarte', 'viaje', 'pg', 'apoyo', 'reunion',
+      'cambio_turno', 'apertura', 'lanzamiento', 'vacaciones', 'incapacidad',
+      'dia_familia', 'permiso_no_remunerado', 'licencia_no_remunerada',
+      'licencia_remunerada', 'licencia_luto', 'otro'
+    ];
+    setShowMoreMotivosModal(motivosExpandibles.includes(motivo));
+    setEventoEditar(detalle);
+    setModalEditar(true);
+  };
+
+  const handleInputChangeModal = (e) => {
+    const { name, value } = e.target;
+    setFormDataModal(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleGuardarEdicionModal = async () => {
+    if (!eventoEditar) return;
+
+    if (!formDataModal.puntoVenta) {
+      alert('Por favor selecciona un punto de venta');
+      return;
+    }
+    if (formDataModal.motivo === 'cubrir_puesto' && !formDataModal.detalleCubrir) {
+      alert('Por favor especifica a quién vas a cubrir');
+      return;
+    }
+    if (formDataModal.motivo === 'otro' && !formDataModal.detalleOtro) {
+      alert('Por favor especifica el detalle de la actividad');
+      return;
+    }
+    if (formDataModal.motivo !== 'dia_descanso' && formDataModal.motivo !== 'vacaciones') {
+      if (!formDataModal.horaInicio || !formDataModal.horaFin) {
+        alert('Por favor ingresa hora de inicio y fin');
+        return;
+      }
+      const inicio = new Date(`2000-01-01T${formDataModal.horaInicio}`);
+      const fin = new Date(`2000-01-01T${formDataModal.horaFin}`);
+      if (fin <= inicio) {
+        alert('La hora de fin debe ser mayor a la hora de inicio');
+        return;
+      }
+    }
+
+    const puntoVentaObj = puntosVenta.find(p => String(p.id) === formDataModal.puntoVenta);
+    const puntoVentaNombre = puntoVentaObj ? puntoVentaObj.nombre : '';
+    let actividad = motivosLabels[formDataModal.motivo] || formDataModal.motivo;
+    if (formDataModal.motivo === 'otro') actividad = formDataModal.detalleOtro;
+
+    const horaInicio = (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '00:00:00' : `${formDataModal.horaInicio}:00`;
+    const horaFin = (formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones') ? '00:00:00' : `${formDataModal.horaFin}:00`;
+
+    const documento = user.documento;
+    const pad = (n) => String(n).padStart(2, '0');
+    const fechaFormateada = `${eventoEditar.fecha.getFullYear()}-${pad(eventoEditar.fecha.getMonth() + 1)}-${pad(eventoEditar.fecha.getDate())}`;
+
+    const datosAPI = {
+      data: { pdv_nombre: puntoVentaNombre, fecha: fechaFormateada, hora_inicio: horaInicio, hora_fin: horaFin, actividad, documento: String(documento) }
+    };
+
+    try {
+      const url = `https://macfer.crepesywaffles.com/api/horarios-instructoras?filters[documento][$eq]=${documento}&filters[fecha][$eq]=${fechaFormateada}&filters[pdv_nombre][$eq]=${eventoEditar.pdv}&filters[actividad][$eq]=${eventoEditar.actividad}`;
+      const response = await axios.get(url);
+      if (response.data?.data?.length > 0) {
+        const idAPI = response.data.data[0].id;
+        await axios.put(`https://macfer.crepesywaffles.com/api/horarios-instructoras/${idAPI}`, datosAPI);
+      }
+
+      setHorariosDetalles(prev => prev.map(d => d === eventoEditar ? { ...d, pdv: puntoVentaNombre, actividad, horaInicio, horaFin } : d));
+      setModalEditar(false);
+      setEventoEditar(null);
+      alert('✅ Actividad actualizada exitosamente');
+    } catch (error) {
+      console.error('Error al actualizar:', error);
+      alert('❌ Error al guardar los cambios. Por favor intenta nuevamente.');
+    }
+  };
+
+  const handleCerrarModal = () => {
+    setModalEditar(false);
+    setEventoEditar(null);
+    setFormDataModal({ puntoVenta: '', horaInicio: '', horaFin: '', motivo: '', detalleCubrir: '', detalleOtro: '' });
+    setShowMoreMotivosModal(false);
+  };
+
+  const handleEliminarActividad = async (detalle) => {
+    if (!confirm('¿Estás segura de que deseas eliminar esta actividad?')) return;
+
+    try {
+      const documento = user.documento;
+      const pad = (n) => String(n).padStart(2, '0');
+      const fechaFormateada = `${detalle.fecha.getFullYear()}-${pad(detalle.fecha.getMonth() + 1)}-${pad(detalle.fecha.getDate())}`;
+
+      const url = `https://macfer.crepesywaffles.com/api/horarios-instructoras?filters[documento][$eq]=${documento}&filters[fecha][$eq]=${fechaFormateada}&filters[pdv_nombre][$eq]=${detalle.pdv}&filters[actividad][$eq]=${detalle.actividad}`;
+      const response = await axios.get(url);
+      if (response.data?.data?.length > 0) {
+        const idAPI = response.data.data[0].id;
+        await axios.delete(`https://macfer.crepesywaffles.com/api/horarios-instructoras/${idAPI}`);
+      }
+
+      setHorariosDetalles(prev => prev.filter(d => d !== detalle));
+      alert('✅ Actividad eliminada exitosamente');
+    } catch (error) {
+      console.error('Error al eliminar:', error);
+      alert('❌ Error al eliminar la actividad.');
+    }
+  };
+
+  const handleDescargarPDF = (semana) => {
+    const filasTabla = horariosDetalles.map(horario => `
+      <tr>
+        <td><strong>${getDiaSemana(horario.fecha)}</strong></td>
+        <td>${formatearFechaCompleta(horario.fecha)}</td>
+        <td>${horario.actividad}</td>
+        <td>${horario.horaInicio === '00:00:00' ? 'Todo el día' : `${horario.horaInicio.substring(0, 5)} - ${horario.horaFin.substring(0, 5)}`}</td>
+        <td>${horario.pdv}</td>
+      </tr>
+    `).join('');
+
+    const contenidoPDF = `<!DOCTYPE html>
+      <html>
+        <head>
+          <title>Programación Semanal</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+            .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #AECE82; }
+            .header h1 { color: #6B4E3D; margin: 10px 0; }
+            .info-semana { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+            .info-semana p { margin: 5px 0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background: linear-gradient(135deg, #AECE82 0%, #9bb86e 100%); color: white; font-weight: 600; }
+            tr:nth-child(even) { background: #f9f9f9; }
+            .footer { margin-top: 20px; text-align: center; font-size: 0.9em; color: #888; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Programación Semanal de Capacitaciones</h1>
+            <p><strong>Instructora:</strong> ${user?.nombre || 'N/A'}</p>
+          </div>
+          <div class="info-semana">
+            <p><strong>Período:</strong> ${formatearRangoFechas(semana.fechaInicio, semana.fechaFin)}</p>
+            <p><strong>Total de horas programadas:</strong> ${semana.totalHoras.toFixed(1)} horas</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:12%">Día</th>
+                <th style="width:18%">Fecha</th>
+                <th style="width:25%">Actividad</th>
+                <th style="width:15%">Hora</th>
+                <th style="width:30%">Punto de Venta</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${horariosDetalles.length > 0 ? filasTabla : '<tr><td colspan="5" style="text-align:center;color:#999;"><em>No hay programación registrada</em></td></tr>'}
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>Generado el ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+        </body>
+      </html>`;
+
+    const ventanaImpresion = window.open('', '', 'width=900,height=700');
+    ventanaImpresion.document.write(contenidoPDF);
+    ventanaImpresion.document.close();
+    setTimeout(() => ventanaImpresion.print(), 500);
   };
 
   return (
@@ -246,11 +478,11 @@ function Dashboard({ userData, onLogout }) {
             </div>
           </div>
           <div className="navbar-actions">
-            <button className="btn-volver" onClick={handleVolverMenu}>
+            <button className="btn-volver" onClick={() => navigate('/menu')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
               </svg>
-              Volver 
+              Volver
             </button>
           </div>
         </div>
@@ -258,14 +490,12 @@ function Dashboard({ userData, onLogout }) {
 
       {/* Main Content */}
       <main className="dashboard-main">
-        {/* Welcome Section */}
         <div className="welcome-section">
           <h2 className="welcome-greeting">¡Hola, {user?.nombre?.split(' ')[0]}!</h2>
         </div>
 
-        {/* Dashboard Cards */}
         <div className="dashboard-cards">
-          <div className="dashboard-card" onClick={handleEditar}>
+          <div className="dashboard-card" onClick={() => navigate('/portal/horarios-instructoras/instructor/programacion')}>
             <div className="card-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1z"/>
@@ -280,77 +510,123 @@ function Dashboard({ userData, onLogout }) {
           </div>
         </div>
 
-        {/* Info Notice */}
-        <div className="info-notice">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-            <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
-          </svg>
-          <p>Recuerda programar tus horarios con anticipación para una mejor organización.</p>
-        </div>
-
-        {/* Content Wrapper */}
-        <div className="content-wrapper">
-          {/* Tabla de Horarios */}
-          <div className="horarios-table-section">
-            <div className="table-header">
-              <h3 className="table-title">Historial de Horarios</h3>
-              <div className="table-stats">
-                <span className="stat-badge total-hours">Total Horas: {totalHoras.toFixed(1)}</span>
-                <span className="stat-badge">Semanas: {horariosData.length}</span>
-              </div>
+        {/* Tabla de Horarios */}
+        <div className="horarios-table-section">
+          <div className="table-header">
+            <div>
+              <h3 className="table-title">Horarios Programados</h3>
+              {infoSemana && (
+                <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '14px' }}>
+                  {formatearFecha(infoSemana.fechaInicio)} - {formatearFecha(infoSemana.fechaFin)}
+                </p>
+              )}
             </div>
-
-            <div className="custom-table-container">
-              <table className="custom-table">
-                <thead>
-                  <tr>
-                    <th>Semana</th>
-                    <th>Año</th>
-                    <th>Rango de Fechas</th>
-                    <th>Total Horas</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {horariosData.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>
-                        No hay horarios registrados
-                      </td>
-                    </tr>
-                  ) : (
-                    horariosData.map((item, index) => (
-                      <tr key={index}>
-                        <td><strong>Semana {item.semana}</strong></td>
-                        <td>{item.anio}</td>
-                        <td>{formatearRangoFechas(item.fechaInicio, item.fechaFin)}</td>
-                        <td>
-                          <span className="tag-hours">{item.totalHoras.toFixed(1)} hrs</span>
-                        </td>
-                        <td>
-                          <div className="action-buttons">
-                            <button className="btn-action btn-view" onClick={() => handleVer(item)} title="Ver">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/>
-                                <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>
-                              </svg>
-                            </button>
-                            <button className="btn-action btn-pdf" onClick={() => handleDescargarPDF(item)} title="PDF">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn-semana-nav" onClick={() => { setSemanaOffset(prev => prev - 1); setFilaExpandida(null); }}>
+                ← Anterior
+              </button>
+              <span className="semana-label-nav">
+                {infoSemana
+                  ? `${formatearFecha(infoSemana.fechaInicio)} – ${formatearFecha(infoSemana.fechaFin)}`
+                  : 'Cargando...'}
+              </span>
+              <button className="btn-semana-nav" onClick={() => { setSemanaOffset(prev => prev + 1); setFilaExpandida(null); }}>
+                Siguiente →
+              </button>
+            </div>
+            <div className="table-stats">
+              <Tag color="green" style={{ fontSize: '14px', padding: '6px 12px' }}>Total: {totalHoras.toFixed(1)}h</Tag>
             </div>
           </div>
+
+          <Card style={{ margin: '20px 40px' }}>
+            <Table
+              dataSource={horariosData}
+              columns={[
+                {
+                  title: 'Fechas',
+                  key: 'fechas',
+                  render: (_, record) => formatearRangoFechas(record.fechaInicio, record.fechaFin),
+                },
+                {
+                  title: 'Total Horas',
+                  dataIndex: 'totalHoras',
+                  key: 'totalHoras',
+                  render: (horas) => <Tag color="cyan" style={{ fontSize: '14px' }}>{horas.toFixed(1)}h</Tag>,
+                },
+                {
+                  title: 'Acciones',
+                  key: 'acciones',
+                  render: (_, record) => (
+                    <Space size="small">
+                      <Tooltip title="Ver detalle">
+                        <Button type="text" icon={<EyeOutlined />} onClick={() => handleVer(record)} style={{ color: '#52c41a' }} />
+                      </Tooltip>
+                      <Tooltip title="Descargar PDF">
+                        <Button type="text" icon={<DownloadOutlined />} onClick={() => handleDescargarPDF(record)} style={{ color: '#1890ff' }} />
+                      </Tooltip>
+                    </Space>
+                  ),
+                },
+              ]}
+              expandable={{
+                expandedRowRender: () => (
+                  <div style={{ padding: '20px', background: '#fafafa' }}>
+                    <h4 style={{ marginBottom: '15px', color: '#4e3416' }}>Actividades de la Semana</h4>
+                    {horariosDetalles.length > 0 ? (
+                      <Table
+                        dataSource={horariosDetalles.map((detalle, index) => ({ ...detalle, key: index }))}
+                        columns={[
+                          { title: 'Día', dataIndex: 'fecha', key: 'dia', render: (fecha) => <strong>{getDiaSemana(fecha)}</strong> },
+                          { title: 'Fecha', dataIndex: 'fecha', key: 'fecha', render: (fecha) => formatearFechaCompleta(fecha) },
+                          { title: 'PDV', dataIndex: 'pdv', key: 'pdv' },
+                          {
+                            title: 'Actividad', dataIndex: 'actividad', key: 'actividad',
+                            render: (actividad) => {
+                              let color = 'blue';
+                              if (actividad.includes('Retroalimentación')) color = 'geekblue';
+                              else if (actividad.includes('Capacitación')) color = 'purple';
+                              else if (actividad.includes('Descanso')) color = 'volcano';
+                              return <Tag color={color}>{actividad}</Tag>;
+                            }
+                          },
+                          {
+                            title: 'Horario', key: 'horario',
+                            render: (_, d) => d.horaInicio === '00:00:00'
+                              ? <Tag color="orange">Todo el día</Tag>
+                              : `${d.horaInicio.substring(0, 5)} - ${d.horaFin.substring(0, 5)}`
+                          },
+                          {
+                            title: 'Acciones', key: 'acciones',
+                            render: (_, detalle) => (
+                              <Space size="small">
+                                <Tooltip title="Editar">
+                                  <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEditarActividad(detalle)} style={{ color: '#AECE82' }} />
+                                </Tooltip>
+                              </Space>
+                            )
+                          },
+                        ]}
+                        pagination={false}
+                        size="small"
+                      />
+                    ) : (
+                      <p style={{ color: '#999', textAlign: 'center', padding: '20px' }}>No hay actividades programadas</p>
+                    )}
+                  </div>
+                ),
+                expandIcon: ({ expanded, onExpand, record }) =>
+                  expanded
+                    ? <UpOutlined onClick={e => onExpand(record, e)} style={{ color: '#AECE82' }} />
+                    : <DownOutlined onClick={e => onExpand(record, e)} style={{ color: '#AECE82' }} />,
+                onExpand: (expanded, record) => setFilaExpandida(expanded ? record.key : null),
+                expandedRowKeys: filaExpandida ? [filaExpandida] : [],
+              }}
+              locale={{ emptyText: 'No hay horarios programados' }}
+              pagination={false}
+              bordered
+            />
+          </Card>
         </div>
       </main>
 
@@ -403,6 +679,141 @@ function Dashboard({ userData, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* Modal de Vista Previa */}
+      <Modal
+        title="Programación Semanal"
+        open={showPreviewModal && !!semanaPreview}
+        onCancel={() => setShowPreviewModal(false)}
+        footer={null}
+        centered
+        width={900}
+      >
+        {semanaPreview && (
+          <div style={{ padding: '10px 0' }}>
+            <Card style={{ marginBottom: '20px', background: '#f5f5f5' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '14px', color: '#999', marginBottom: '5px' }}>Semana #</div>
+                  <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#4e3416' }}>{semanaPreview.numeroSemana}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '14px', color: '#999', marginBottom: '5px' }}>Período</div>
+                  <div style={{ fontSize: '16px', fontWeight: '500', color: '#333' }}>{formatearRangoFechas(semanaPreview.fechaInicio, semanaPreview.fechaFin)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '14px', color: '#999', marginBottom: '5px' }}>Total de Horas</div>
+                  <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#AECE82' }}>{semanaPreview.totalHoras.toFixed(1)}h</div>
+                </div>
+              </div>
+            </Card>
+            {horariosDetalles.length > 0 && (
+              <Table
+                dataSource={horariosDetalles.map((h, i) => ({ ...h, key: i }))}
+                columns={[
+                  { title: 'Día', dataIndex: 'fecha', key: 'dia', render: (f) => <strong>{getDiaSemana(f)}</strong> },
+                  { title: 'Fecha', dataIndex: 'fecha', key: 'fecha', render: (f) => formatearFechaCompleta(f) },
+                  { title: 'Actividad', dataIndex: 'actividad', key: 'actividad' },
+                  { title: 'Hora', key: 'hora', render: (_, h) => h.horaInicio === '00:00:00' ? <Tag color="orange">Todo el día</Tag> : `${h.horaInicio.substring(0, 5)} - ${h.horaFin.substring(0, 5)}` },
+                  { title: 'Punto de Venta', dataIndex: 'pdv', key: 'pdv' },
+                ]}
+                pagination={false}
+                size="small"
+                bordered
+              />
+            )}
+            <div style={{ marginTop: '20px', textAlign: 'right', color: '#999', fontSize: '12px' }}>
+              Generado el {new Date().toLocaleDateString('es-CO')}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal de Edición */}
+      <Modal
+        title="Editar Actividad"
+        open={modalEditar}
+        onCancel={handleCerrarModal}
+        footer={[
+          <Button key="cancel" onClick={handleCerrarModal}>Cancelar</Button>,
+          <Button key="save" type="primary" onClick={handleGuardarEdicionModal} style={{ background: '#AECE82', borderColor: '#AECE82' }}>
+            Guardar Cambios
+          </Button>
+        ]}
+        centered
+        width={700}
+      >
+        <Form layout="vertical" style={{ marginTop: '20px' }}>
+          <Form.Item label="Punto de Venta">
+            <Select
+              value={formDataModal.puntoVenta || undefined}
+              onChange={(value) => setFormDataModal(prev => ({ ...prev, puntoVenta: value }))}
+              placeholder="Selecciona un punto de venta"
+              size="large"
+            >
+              {puntosVenta.map(pdv => (
+                <Select.Option key={pdv.id} value={String(pdv.id)}>{pdv.nombre}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Space style={{ display: 'flex', gap: '10px' }}>
+            <Form.Item label="Hora Inicio" style={{ flex: 1 }}>
+              <Input type="time" name="horaInicio" value={formDataModal.horaInicio} onChange={handleInputChangeModal}
+                disabled={formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones'} size="large" />
+            </Form.Item>
+            <Form.Item label="Hora Fin" style={{ flex: 1 }}>
+              <Input type="time" name="horaFin" value={formDataModal.horaFin} onChange={handleInputChangeModal}
+                disabled={formDataModal.motivo === 'dia_descanso' || formDataModal.motivo === 'vacaciones'} size="large" />
+            </Form.Item>
+          </Space>
+
+          <Form.Item label="Motivo">
+            <Space wrap size="small" style={{ width: '100%' }}>
+              {['retroalimentacion', 'acompañamiento', 'capacitacion'].map(m => (
+                <Button key={m}
+                  type={formDataModal.motivo === m ? 'primary' : 'default'}
+                  onClick={() => { setFormDataModal(prev => ({ ...prev, motivo: m, detalleCubrir: '', detalleOtro: '' })); setShowMoreMotivosModal(false); }}
+                  style={formDataModal.motivo === m ? { background: '#AECE82', borderColor: '#AECE82' } : {}}>
+                  {motivosLabels[m]}
+                </Button>
+              ))}
+              {showMoreMotivosModal && Object.entries(motivosLabels)
+                .filter(([k]) => !['retroalimentacion', 'acompañamiento', 'capacitacion'].includes(k))
+                .map(([k, label]) => (
+                  <Button key={k}
+                    type={formDataModal.motivo === k ? 'primary' : 'default'}
+                    onClick={() => setFormDataModal(prev => ({
+                      ...prev, motivo: k,
+                      detalleCubrir: k !== 'cubrir_puesto' ? '' : prev.detalleCubrir,
+                      detalleOtro: k !== 'otro' ? '' : prev.detalleOtro
+                    }))}
+                    style={formDataModal.motivo === k ? { background: '#AECE82', borderColor: '#AECE82' } : {}}>
+                    {label}
+                  </Button>
+                ))
+              }
+              <Button type="link" onClick={() => setShowMoreMotivosModal(!showMoreMotivosModal)}
+                icon={showMoreMotivosModal ? <UpOutlined /> : <DownOutlined />}>
+                {showMoreMotivosModal ? 'Ver menos' : 'Ver más opciones'}
+              </Button>
+            </Space>
+          </Form.Item>
+
+          {formDataModal.motivo === 'cubrir_puesto' && (
+            <Form.Item label="¿A quién vas a cubrir?">
+              <Input name="detalleCubrir" value={formDataModal.detalleCubrir} onChange={handleInputChangeModal}
+                placeholder="Nombre de la persona" size="large" />
+            </Form.Item>
+          )}
+          {formDataModal.motivo === 'otro' && (
+            <Form.Item label="Especifica el motivo">
+              <Input name="detalleOtro" value={formDataModal.detalleOtro} onChange={handleInputChangeModal}
+                placeholder="Describe la actividad" size="large" />
+            </Form.Item>
+          )}
+        </Form>
+      </Modal>
     </div>
   );
 }
